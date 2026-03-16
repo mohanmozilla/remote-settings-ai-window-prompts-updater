@@ -6,7 +6,7 @@ from unittest import mock
 import pytest
 from kinto_http import KintoException
 
-from script import (
+from ai_window_prompts_updater import (
     clone_repo,
     collect_prompts_and_params,
     fetch_current_prompts,
@@ -19,7 +19,7 @@ from script import (
 @pytest.fixture
 def mocked_client():
     # Mock the kinto_http.Client where it is imported.
-    with mock.patch("script.Client", spec=True) as mocked_class:
+    with mock.patch("ai_window_prompts_updater.Client", spec=True) as mocked_class:
         yield mocked_class()
 
 
@@ -74,8 +74,8 @@ def test_main_logged_in(mocked_client, capsys):
 
 
 # Tests for clone_repo function
-@mock.patch("script.GIT_TOKEN", "test_token")
-@mock.patch("script.subprocess.run")
+@mock.patch("ai_window_prompts_updater.GIT_TOKEN", "test_token")
+@mock.patch("ai_window_prompts_updater.subprocess.run")
 def test_clone_repo_success(mock_run, capsys):
     mock_run.return_value = mock.Mock(returncode=0, stderr="")
 
@@ -87,8 +87,8 @@ def test_clone_repo_success(mock_run, capsys):
     mock_run.assert_called_once()
 
 
-@mock.patch("script.GIT_TOKEN", "test_token")
-@mock.patch("script.subprocess.run")
+@mock.patch("ai_window_prompts_updater.GIT_TOKEN", "test_token")
+@mock.patch("ai_window_prompts_updater.subprocess.run")
 def test_clone_repo_failure(mock_run, capsys):
     mock_run.return_value = mock.Mock(returncode=1, stderr="Authentication failed")
 
@@ -99,8 +99,8 @@ def test_clone_repo_failure(mock_run, capsys):
     assert "ERROR cloning repo" in output
 
 
-@mock.patch("script.GIT_TOKEN", "test_token")
-@mock.patch("script.subprocess.run")
+@mock.patch("ai_window_prompts_updater.GIT_TOKEN", "test_token")
+@mock.patch("ai_window_prompts_updater.subprocess.run")
 def test_clone_repo_with_token(mock_run):
     mock_run.return_value = mock.Mock(returncode=0, stderr="")
 
@@ -160,8 +160,8 @@ def test_collect_prompts_and_params_multiple_versions(temp_prompts_dir):
 
 
 # Tests for fetch_current_prompts function
-@mock.patch("script.shutil.rmtree")
-@mock.patch("script.collect_prompts_and_params")
+@mock.patch("ai_window_prompts_updater.shutil.rmtree")
+@mock.patch("ai_window_prompts_updater.collect_prompts_and_params")
 def test_fetch_current_prompts(mock_collect, mock_rmtree, temp_prompts_dir, capsys):
     mock_collect.return_value = [{"id": "test-1"}, {"id": "test-2"}]
     repo_path = temp_prompts_dir.parent
@@ -250,7 +250,7 @@ def test_sync_collection_with_deletes():
     mock_batch.delete_record.assert_called_once_with(id="test-1")
 
 
-@mock.patch("script.ENVIRONMENT", "dev")
+@mock.patch("ai_window_prompts_updater.ENVIRONMENT", "dev")
 def test_sync_collection_dev_auto_approve(capsys):
     mock_client = mock.Mock()
     mock_client.get_records.return_value = []
@@ -316,10 +316,10 @@ def test_sync_collection_review_error(capsys):
 
 
 # Integration tests for main function
-@mock.patch("script.sync_collection")
-@mock.patch("script.fetch_current_prompts")
-@mock.patch("script.clone_repo")
-@mock.patch("script.Client")
+@mock.patch("ai_window_prompts_updater.sync_collection")
+@mock.patch("ai_window_prompts_updater.fetch_current_prompts")
+@mock.patch("ai_window_prompts_updater.clone_repo")
+@mock.patch("ai_window_prompts_updater.Client")
 def test_main_full_success(mock_client_class, mock_clone, mock_fetch, mock_sync):
     mock_client = mock.Mock()
     mock_client.server_info.return_value = {"user": {"id": "test@example.com"}}
@@ -336,8 +336,8 @@ def test_main_full_success(mock_client_class, mock_clone, mock_fetch, mock_sync)
     mock_sync.assert_called_once()
 
 
-@mock.patch("script.clone_repo")
-@mock.patch("script.Client")
+@mock.patch("ai_window_prompts_updater.clone_repo")
+@mock.patch("ai_window_prompts_updater.Client")
 def test_main_clone_failure(mock_client_class, mock_clone):
     mock_client = mock.Mock()
     mock_client.server_info.return_value = {"user": {"id": "test@example.com"}}
@@ -349,10 +349,10 @@ def test_main_clone_failure(mock_client_class, mock_clone):
     assert result == 1
 
 
-@mock.patch("script.sync_collection")
-@mock.patch("script.fetch_current_prompts")
-@mock.patch("script.clone_repo")
-@mock.patch("script.Client")
+@mock.patch("ai_window_prompts_updater.sync_collection")
+@mock.patch("ai_window_prompts_updater.fetch_current_prompts")
+@mock.patch("ai_window_prompts_updater.clone_repo")
+@mock.patch("ai_window_prompts_updater.Client")
 def test_main_sync_failure(mock_client_class, mock_clone, mock_fetch, mock_sync):
     mock_client = mock.Mock()
     mock_client.server_info.return_value = {"user": {"id": "test@example.com"}}
@@ -366,7 +366,7 @@ def test_main_sync_failure(mock_client_class, mock_clone, mock_fetch, mock_sync)
     assert result == 1
 
 
-@mock.patch("script.Client")
+@mock.patch("ai_window_prompts_updater.Client")
 def test_main_connection_failure(mock_client_class, capsys):
     mock_client = mock.Mock()
     mock_client.server_info.side_effect = Exception("Connection refused")
