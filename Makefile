@@ -14,13 +14,13 @@ $(INSTALL_STAMP): pyproject.toml uv.lock  ## Install dependencies
 
 .PHONY: format
 format: $(INSTALL_STAMP)  ## Format code base
-	$(UV) run ruff check --fix *.py
-	$(UV) run ruff format *.py
+	$(UV) run ruff check --fix *.py ai_window_prompts_updater/
+	$(UV) run ruff format *.py ai_window_prompts_updater/
 
 .PHONY: lint
 lint: $(INSTALL_STAMP)  ## Analyze code base
-	$(UV) run ruff check *.py
-	$(UV) run ruff format --check *.py
+	$(UV) run ruff check *.py ai_window_prompts_updater/
+	$(UV) run ruff format --check *.py ai_window_prompts_updater/
 
 .PHONY: start
 start: $(INSTALL_STAMP)  ## Start the script

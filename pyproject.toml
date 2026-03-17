@@ -1,5 +1,5 @@
 [project]
-name = "ai-window-remote-settings-prompts-update"
+name = "ai-window-prompts-updater"
 version = "0.1.0"
 description = "A script to update remote settings ai window prompts via cronjob"
 authors = [
@@ -17,6 +17,9 @@ dependencies = [
 dev = [
     "ruff<1.0.0,>=0.11.12",
 ]
+
+[project.scripts]
+ai-window-prompts-updater = "ai_window_prompts_updater:main"
 
 [build-system]
 requires = ["pdm-backend"]

@@ -50,6 +50,13 @@ jobs:
             --network=host \
             --env KINTO_INI=config/testing.ini \
             mozilla/remote-settings
+      - name: Wait for Remote Settings server
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8888/v1/ && break
+            echo "Waiting for server... ($i)"
+            sleep 1
+          done
       - name: Create collection
         run: |
           curl -X PUT http://localhost:8888/v1/buckets/main-workspace/collections/ai-window-prompts
