@@ -41,7 +41,7 @@ AI_WINDOW_PROMPTS_COLLECTION = "ai-window-prompts"
 PROMPTS_REPO = "https://github.com/Firefox-AI/ai-window-remote-settings-prompts.git"
 
 
-def clone_repo(git_url):
+def clone_repo(branch):
     """
     Clone the prompts repo and fetch prompts from it.
 
@@ -54,16 +54,18 @@ def clone_repo(git_url):
     repo_path = Path(temp_dir) / "ai-window-remote-settings-prompts"
 
     try:
-        print(f"🔄 Cloning {git_url}...")
+        branch_to_clone = branch if branch == "stage" else "prod"
+        print(f"🔄 Cloning {PROMPTS_REPO}...")
+        print(f"🔄 Branch: {branch_to_clone}")
 
         if GIT_TOKEN:
-            git_url = git_url.replace("https://", f"https://{GIT_TOKEN}@")
+            git_url = PROMPTS_REPO.replace("https://", f"https://{GIT_TOKEN}@")
         else:
             raise RuntimeError("GIT_TOKEN not found")
 
-        # Clone the repository
+        # Clone stage to stage, prod gets cloned to dev and prod
         result = subprocess.run(
-            ["git", "clone", "--depth", "1", "--branch", "main", git_url, str(repo_path)],
+            ["git", "clone", "--depth", "1", "--branch", branch_to_clone, git_url, str(repo_path)],
             capture_output=True,
             text=True,
             timeout=60,
@@ -74,10 +76,10 @@ def clone_repo(git_url):
 
         print("✅ Repository cloned successfully")
 
-        return repo_path
+        return repo_path, branch_to_clone
     except Exception as e:
         print(f"ERROR cloning repo: {e}")
-        return ""
+        return "", ""
 
 
 def fetch_current_prompts(repo_path):
@@ -93,7 +95,7 @@ def fetch_current_prompts(repo_path):
             print("🧹 Cleaned up temporary directory")
 
         print(f"📦 Found {len(records)} prompt records")
-        return records
+    return records
 
 
 def get_item(major_version_dir, model_name):
@@ -202,7 +204,7 @@ def main():
 
     print("\n=== Processing prompts ===")
     print("📥 Fetching prompts ...")
-    repo_path = clone_repo(PROMPTS_REPO)
+    repo_path, _ = clone_repo(ENVIRONMENT)
     if not repo_path:
         return 1
     prompts = fetch_current_prompts(repo_path)

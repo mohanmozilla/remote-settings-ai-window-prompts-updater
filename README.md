@@ -74,7 +74,7 @@ And use it to run the script
 
 ```
 $ read -s BEARER
-$ AUTHORIZATION=$BEARER SERVER="http://remote-settings.mozilla.org/v1" GIT_TOKEN=$GIT_TOKEN python script.py
+$ AUTHORIZATION=$BEARER SERVER="https://remote-settings.mozilla.org/v1" GIT_TOKEN=$GIT_TOKEN python script.py
 ```
 
 **Using an account**:

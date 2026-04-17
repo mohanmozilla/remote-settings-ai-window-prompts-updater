@@ -74,25 +74,36 @@ def test_main_logged_in(mocked_client, capsys):
 
 
 # Tests for clone_repo function
+@pytest.mark.parametrize(
+    "env,expected_branch",
+    [
+        ("prod", "prod"),
+        ("dev", "prod"),
+        ("stage", "stage"),
+    ],
+)
 @mock.patch("ai_window_prompts_updater.GIT_TOKEN", "test_token")
+@mock.patch("ai_window_prompts_updater.PROMPTS_REPO", "https://github.com/test/repo.git")
 @mock.patch("ai_window_prompts_updater.subprocess.run")
-def test_clone_repo_success(mock_run, capsys):
+def test_clone_repo_success(mock_run, capsys, env, expected_branch):
     mock_run.return_value = mock.Mock(returncode=0, stderr="")
 
-    result = clone_repo("https://github.com/test/repo.git")
+    result, branch_name = clone_repo(env)
 
     assert result != ""
+    assert branch_name == expected_branch
     assert "ai-window-remote-settings-prompts" in str(result)
     assert "✅ Repository cloned successfully" in capsys.readouterr().out
     mock_run.assert_called_once()
 
 
 @mock.patch("ai_window_prompts_updater.GIT_TOKEN", "test_token")
+@mock.patch("ai_window_prompts_updater.PROMPTS_REPO", "https://github.com/test/repo.git")
 @mock.patch("ai_window_prompts_updater.subprocess.run")
 def test_clone_repo_failure(mock_run, capsys):
     mock_run.return_value = mock.Mock(returncode=1, stderr="Authentication failed")
 
-    result = clone_repo("https://github.com/test/repo.git")
+    result, _ = clone_repo("prod")
 
     assert result == ""
     output = capsys.readouterr().out
@@ -100,11 +111,12 @@ def test_clone_repo_failure(mock_run, capsys):
 
 
 @mock.patch("ai_window_prompts_updater.GIT_TOKEN", "test_token")
+@mock.patch("ai_window_prompts_updater.PROMPTS_REPO", "https://github.com/test/repo.git")
 @mock.patch("ai_window_prompts_updater.subprocess.run")
 def test_clone_repo_with_token(mock_run):
     mock_run.return_value = mock.Mock(returncode=0, stderr="")
 
-    clone_repo("https://github.com/test/repo.git")
+    clone_repo("prod")
 
     # Verify token was inserted into URL
     call_args = mock_run.call_args[0][0]
@@ -323,8 +335,9 @@ def test_sync_collection_review_error(capsys):
 def test_main_full_success(mock_client_class, mock_clone, mock_fetch, mock_sync):
     mock_client = mock.Mock()
     mock_client.server_info.return_value = {"user": {"id": "test@example.com"}}
+
     mock_client_class.return_value = mock_client
-    mock_clone.return_value = Path("/tmp/test")
+    mock_clone.return_value = Path("/tmp/test"), "prod"
     mock_fetch.return_value = [{"id": "test-1"}]
     mock_sync.return_value = 0
 
@@ -342,7 +355,7 @@ def test_main_clone_failure(mock_client_class, mock_clone):
     mock_client = mock.Mock()
     mock_client.server_info.return_value = {"user": {"id": "test@example.com"}}
     mock_client_class.return_value = mock_client
-    mock_clone.return_value = ""
+    mock_clone.return_value = None, None
 
     result = main()
 
@@ -357,7 +370,7 @@ def test_main_sync_failure(mock_client_class, mock_clone, mock_fetch, mock_sync)
     mock_client = mock.Mock()
     mock_client.server_info.return_value = {"user": {"id": "test@example.com"}}
     mock_client_class.return_value = mock_client
-    mock_clone.return_value = Path("/tmp/test")
+    mock_clone.return_value = Path("/tmp/test"), "prod"
     mock_fetch.return_value = [{"id": "test-1"}]
     mock_sync.return_value = 1
 
