@@ -74,11 +74,14 @@ def test_main_logged_in(mocked_client, capsys):
 
 
 # Tests for clone_repo function
-@pytest.mark.parametrize("env,expected_branch", [
-    ("prod", "prod"),
-    ("dev", "prod"),
-    ("stage", "stage"),
-])
+@pytest.mark.parametrize(
+    "env,expected_branch",
+    [
+        ("prod", "prod"),
+        ("dev", "prod"),
+        ("stage", "stage"),
+    ],
+)
 @mock.patch("ai_window_prompts_updater.GIT_TOKEN", "test_token")
 @mock.patch("ai_window_prompts_updater.PROMPTS_REPO", "https://github.com/test/repo.git")
 @mock.patch("ai_window_prompts_updater.subprocess.run")
