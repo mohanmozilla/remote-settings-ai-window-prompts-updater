@@ -76,10 +76,10 @@ def clone_repo(branch):
 
         print("✅ Repository cloned successfully")
 
-        return repo_path
+        return repo_path, branch_to_clone
     except Exception as e:
         print(f"ERROR cloning repo: {e}")
-        return ""
+        return "", ""
 
 
 def fetch_current_prompts(repo_path):
@@ -204,7 +204,7 @@ def main():
 
     print("\n=== Processing prompts ===")
     print("📥 Fetching prompts ...")
-    repo_path = clone_repo(ENVIRONMENT)
+    repo_path, _ = clone_repo(ENVIRONMENT)
     if not repo_path:
         return 1
     prompts = fetch_current_prompts(repo_path)
