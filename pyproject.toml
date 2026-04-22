@@ -9,13 +9,13 @@ license = {text = "MPLv2"}
 requires-python = "<4.0,>=3.12"
 dependencies = [
     "kinto-http<12.0.0,>=11.8.0",
-    "pytest>=8.4.0,<10.0.0",
-    "sentry-sdk<3.0.0,>=2.29.1",
+    "pytest>=9.0.3,<10.0.0",
+    "sentry-sdk>=2.58.0,<3.0.0",
 ]
 
 [dependency-groups]
 dev = [
-    "ruff<1.0.0,>=0.11.12",
+    "ruff>=0.15.11,<1.0.0",
 ]
 
 [project.scripts]
