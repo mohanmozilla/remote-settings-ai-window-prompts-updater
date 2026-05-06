@@ -9,6 +9,7 @@ from kinto_http import KintoException
 from ai_window_prompts_updater import (
     clone_repo,
     collect_prompts_and_params,
+    collect_v2_records,
     fetch_current_prompts,
     get_item,
     main,
@@ -172,6 +173,140 @@ def test_collect_prompts_and_params_multiple_versions(temp_prompts_dir):
 
 
 # Tests for fetch_current_prompts function
+@pytest.fixture
+def temp_v2_prompts_dir():
+    """Create a temporary repo with both prompts/ (legacy) and prompts_v2/ trees."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        repo_path = Path(temp_dir) / "repo"
+
+        legacy = repo_path / "prompts" / "chat" / "v1"
+        legacy.mkdir(parents=True)
+        with open(legacy / "claude.3.5.json", "w") as f:
+            json.dump(
+                {"feature": "chat", "model": "claude.3.5", "parameters": {"temperature": 0.7}},
+                f,
+            )
+        with open(legacy / "claude.3.5.md", "w") as f:
+            f.write("Legacy prompt")
+
+        v2 = repo_path / "prompts_v2"
+        identity = v2 / "features" / "assistant" / "identity" / "v1"
+        identity.mkdir(parents=True)
+        with open(identity / "generic.json", "w") as f:
+            json.dump({"version": "1.0"}, f)
+        with open(identity / "generic.md", "w") as f:
+            f.write("# Identity\nYou are Smart Window.")
+
+        model_details = v2 / "features" / "assistant" / "model-details" / "v1"
+        model_details.mkdir(parents=True)
+        with open(model_details / "qwen3-235b-a22b-instruct-2507-maas.json", "w") as f:
+            json.dump({"version": "1.0"}, f)
+        with open(model_details / "qwen3-235b-a22b-instruct-2507-maas.md", "w") as f:
+            f.write("Qwen-specific cutoff.")
+
+        params = v2 / "features" / "assistant" / "params" / "v1"
+        params.mkdir(parents=True)
+        with open(params / "generic.json", "w") as f:
+            json.dump(
+                {
+                    "version": "1.0",
+                    "temperature": 1.0,
+                    "purpose": "chat",
+                    "service_type": "ai",
+                },
+                f,
+            )
+
+        tab = v2 / "features" / "browser-context" / "tab" / "v1"
+        tab.mkdir(parents=True)
+        with open(tab / "generic.json", "w") as f:
+            json.dump({"version": "1.0"}, f)
+        with open(tab / "generic.md", "w") as f:
+            f.write("This is my active tab")
+
+        kit = v2 / "skills" / "kit" / "v1"
+        kit.mkdir(parents=True)
+        with open(kit / "generic.json", "w") as f:
+            json.dump({"version": "1.0", "description": "Mascot info"}, f)
+        with open(kit / "generic.md", "w") as f:
+            f.write("Kit is a Firefox mascot")
+
+        yield repo_path
+
+
+def test_collect_v2_records_assistant_module(temp_v2_prompts_dir):
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    identity = next(r for r in records if r.get("module") == "identity")
+    assert identity["id"] == "module--identity--v1--generic"
+    assert identity["kind"] == "system-prompt-module"
+    assert identity["version"] == "1.0"
+    assert identity["model"] == "generic"
+    assert identity["prompt"] == "# Identity\nYou are Smart Window."
+
+
+def test_collect_v2_records_model_specific(temp_v2_prompts_dir):
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    qwen = next(r for r in records if r.get("module") == "model-details")
+    assert qwen["id"] == "module--model-details--v1--qwen3-235b-a22b-instruct-2507-maas"
+    assert qwen["model"] == "qwen3-235b-a22b-instruct-2507-maas"
+
+
+def test_collect_v2_records_browser_context(temp_v2_prompts_dir):
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    tab = next(r for r in records if r.get("fragment") == "tab")
+    assert tab["id"] == "browser-context--tab--v1--generic"
+    assert tab["kind"] == "browser-context-fragment"
+    assert "module" not in tab
+
+
+def test_collect_v2_records_skill(temp_v2_prompts_dir):
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    kit = next(r for r in records if r.get("kind") == "skill")
+    assert kit["id"] == "skill--kit--v1--generic"
+    assert kit["name"] == "kit"
+    assert kit["description"] == "Mascot info"
+    assert kit["prompt"] == "Kit is a Firefox mascot"
+
+
+def test_collect_v2_records_params(temp_v2_prompts_dir):
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    params = next(r for r in records if r.get("kind") == "params")
+    assert params["id"] == "params--v1"
+    assert params["temperature"] == 1.0
+    assert params["purpose"] == "chat"
+    assert params["service_type"] == "ai"
+    assert "prompt" not in params
+
+
+def test_collect_v2_records_normalizes_dots_in_model_name(temp_v2_prompts_dir):
+    gemini = temp_v2_prompts_dir / "prompts_v2" / "features" / "assistant" / "model-details" / "v1"
+    with open(gemini / "gemini-2.5-flash-lite.json", "w") as f:
+        json.dump({"version": "1.0"}, f)
+    with open(gemini / "gemini-2.5-flash-lite.md", "w") as f:
+        f.write("Gemini cutoff")
+
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    rec = next(r for r in records if r.get("model") == "gemini-2.5-flash-lite")
+    assert rec["id"] == "module--model-details--v1--gemini-2-5-flash-lite"
+
+
+def test_collect_v2_records_no_v2_dir():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        empty_repo = Path(temp_dir)
+        records = collect_v2_records(empty_repo / "prompts_v2")
+        assert records == []
+
+
+def test_fetch_current_prompts_includes_v2(temp_v2_prompts_dir, capsys):
+    records = fetch_current_prompts(temp_v2_prompts_dir)
+    legacy = [r for r in records if r.get("id", "").startswith("chat--")]
+    v2 = [r for r in records if r.get("kind") in {"system-prompt-module", "skill", "params", "browser-context-fragment"}]
+    assert len(legacy) == 1
+    assert len(v2) >= 4
+    output = capsys.readouterr().out
+    assert "v2 prompt records" in output
+
+
 @mock.patch("ai_window_prompts_updater.shutil.rmtree")
 @mock.patch("ai_window_prompts_updater.collect_prompts_and_params")
 def test_fetch_current_prompts(mock_collect, mock_rmtree, temp_prompts_dir, capsys):

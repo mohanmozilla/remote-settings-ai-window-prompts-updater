@@ -84,11 +84,16 @@ def clone_repo(branch):
 
 def fetch_current_prompts(repo_path):
     prompts_dir = repo_path / "prompts"
+    prompts_v2_dir = repo_path / "prompts_v2"
 
     if not prompts_dir.exists():
         raise FileNotFoundError(f"Prompts directory not found at {prompts_dir}")
     try:
         records = collect_prompts_and_params(prompts_dir)
+        if prompts_v2_dir.exists():
+            v2_records = collect_v2_records(prompts_v2_dir)
+            print(f"📦 Found {len(v2_records)} v2 prompt records")
+            records.extend(v2_records)
     finally:
         if repo_path.parent.exists():
             shutil.rmtree(repo_path.parent)
@@ -122,6 +127,147 @@ def collect_prompts_and_params(prompts_dir):
                 if f.suffix == ".md":
                     continue
                 items.append(get_item(major_version_dir, f.stem))
+    return items
+
+
+# ---------------------------------------------------------------------------
+# prompts_v2 ingestion
+#
+# Layout:
+#   features/<area>/<module>/v#/<model|generic>.{json,md}
+#     - area="assistant": system-prompt modules concatenated at runtime
+#     - area="browser-context": user-role injection fragments (tab, mentions)
+#     - special: features/assistant/params/v#/generic.json — generation params,
+#       no .md companion
+#   skills/<name>/v#/<model|generic>.{json,md}
+#
+# Each record carries a `kind` discriminator so Firefox can filter the
+# collection by record type.
+
+V2_KIND_BY_AREA = {
+    "assistant": "system-prompt-module",
+    "browser-context": "browser-context-fragment",
+}
+
+
+def _normalize_model(stem):
+    return stem.replace(".", "-")
+
+
+def _read_json_if_exists(path):
+    if not path.exists():
+        return None
+    with open(path, "r") as f:
+        return json.load(f)
+
+
+def _pair_files_by_stem(directory):
+    pairs = {}
+    for f in directory.iterdir():
+        if f.is_file() and f.suffix in (".json", ".md"):
+            pairs.setdefault(f.stem, {})[f.suffix] = f
+    return pairs
+
+
+def collect_v2_records(prompts_v2_dir):
+    items = []
+    features_dir = prompts_v2_dir / "features"
+    if features_dir.exists():
+        for area_dir in sorted(features_dir.iterdir()):
+            if not area_dir.is_dir():
+                continue
+            for module_dir in sorted(area_dir.iterdir()):
+                if not module_dir.is_dir():
+                    continue
+                for version_dir in sorted(module_dir.iterdir()):
+                    if not version_dir.is_dir():
+                        continue
+                    items.extend(
+                        _collect_v2_module_records(
+                            version_dir, area_dir.name, module_dir.name, version_dir.name
+                        )
+                    )
+
+    skills_dir = prompts_v2_dir / "skills"
+    if skills_dir.exists():
+        for skill_dir in sorted(skills_dir.iterdir()):
+            if not skill_dir.is_dir():
+                continue
+            for version_dir in sorted(skill_dir.iterdir()):
+                if not version_dir.is_dir():
+                    continue
+                items.extend(
+                    _collect_v2_skill_records(version_dir, skill_dir.name, version_dir.name)
+                )
+
+    return items
+
+
+def _collect_v2_module_records(version_dir, area, module, version):
+    if area == "assistant" and module == "params":
+        json_data = _read_json_if_exists(version_dir / "generic.json")
+        if json_data is None:
+            return []
+        record = {
+            "id": f"params--{version}",
+            "kind": "params",
+            "version": json_data.get("version", "1.0"),
+        }
+        for key in ("temperature", "purpose", "service_type"):
+            if key in json_data:
+                record[key] = json_data[key]
+        return [record]
+
+    kind = V2_KIND_BY_AREA.get(area)
+    if kind is None:
+        return []
+
+    items = []
+    for stem, paths in sorted(_pair_files_by_stem(version_dir).items()):
+        md_path = paths.get(".md")
+        if md_path is None:
+            continue  # no prompt content; skip
+        json_data = _read_json_if_exists(paths[".json"]) if ".json" in paths else None
+        record = {
+            "id": _v2_module_id(area, module, version, stem),
+            "kind": kind,
+            "version": (json_data or {}).get("version", "1.0"),
+            "model": stem,
+            "prompt": md_path.read_text(),
+        }
+        if area == "assistant":
+            record["module"] = module
+        else:
+            record["fragment"] = module
+        items.append(record)
+    return items
+
+
+def _v2_module_id(area, module, version, stem):
+    model_part = _normalize_model(stem)
+    if area == "assistant":
+        return f"module--{module}--{version}--{model_part}"
+    return f"browser-context--{module}--{version}--{model_part}"
+
+
+def _collect_v2_skill_records(version_dir, name, version):
+    items = []
+    for stem, paths in sorted(_pair_files_by_stem(version_dir).items()):
+        md_path = paths.get(".md")
+        if md_path is None:
+            continue
+        json_data = _read_json_if_exists(paths[".json"]) if ".json" in paths else None
+        items.append(
+            {
+                "id": f"skill--{name}--{version}--{_normalize_model(stem)}",
+                "kind": "skill",
+                "version": (json_data or {}).get("version", "1.0"),
+                "name": name,
+                "model": stem,
+                "description": (json_data or {}).get("description", ""),
+                "prompt": md_path.read_text(),
+            }
+        )
     return items
 
 
