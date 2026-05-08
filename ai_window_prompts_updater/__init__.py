@@ -135,19 +135,12 @@ def collect_prompts_and_params(prompts_dir):
 #
 # Layout:
 #   features/<area>/<module>/v#/<model|generic>.{json,md}
-#     - area="assistant": system-prompt modules concatenated at runtime
-#     - area="browser-context": user-role injection fragments (tab, mentions)
-#     - special: features/assistant/params/v#/generic.json — generation params,
-#       no .md companion
+#     - regular modules: .md is the prompt body; optional .json sidecar
+#     - module == "params": JSON-only generation params (one per model)
 #   skills/<name>/v#/<model|generic>.{json,md}
 #
-# Each record carries a `kind` discriminator so Firefox can filter the
-# collection by record type.
-
-V2_KIND_BY_AREA = {
-    "assistant": "system-prompt-module",
-    "browser-context": "browser-context-fragment",
-}
+# Records carry a `kind` discriminator: "system-prompt-module", "params", or
+# "skill". Areas are open-ended — new areas drop in without an updater change.
 
 
 def _normalize_model(stem):
@@ -204,23 +197,8 @@ def collect_v2_records(prompts_v2_dir):
 
 
 def _collect_v2_module_records(version_dir, area, module, version):
-    if area == "assistant" and module == "params":
-        json_data = _read_json_if_exists(version_dir / "generic.json")
-        if json_data is None:
-            return []
-        record = {
-            "id": f"params--{version}",
-            "kind": "params",
-            "version": json_data.get("version", "1.0"),
-        }
-        for key in ("temperature", "purpose", "service_type"):
-            if key in json_data:
-                record[key] = json_data[key]
-        return [record]
-
-    kind = V2_KIND_BY_AREA.get(area)
-    if kind is None:
-        return []
+    if module == "params":
+        return _collect_v2_params_records(version_dir, area, version)
 
     items = []
     for stem, paths in sorted(_pair_files_by_stem(version_dir).items()):
@@ -228,26 +206,41 @@ def _collect_v2_module_records(version_dir, area, module, version):
         if md_path is None:
             continue  # no prompt content; skip
         json_data = _read_json_if_exists(paths[".json"]) if ".json" in paths else None
-        record = {
-            "id": _v2_module_id(area, module, version, stem),
-            "kind": kind,
-            "version": (json_data or {}).get("version", "1.0"),
-            "model": stem,
-            "prompt": md_path.read_text(),
-        }
-        if area == "assistant":
-            record["module"] = module
-        else:
-            record["fragment"] = module
-        items.append(record)
+        items.append(
+            {
+                "id": f"{area}--{module}--{version}--{_normalize_model(stem)}",
+                "kind": "system-prompt-module",
+                "version": (json_data or {}).get("version", "1.0"),
+                "area": area,
+                "module": module,
+                "model": stem,
+                "prompt": md_path.read_text(),
+            }
+        )
     return items
 
 
-def _v2_module_id(area, module, version, stem):
-    model_part = _normalize_model(stem)
-    if area == "assistant":
-        return f"module--{module}--{version}--{model_part}"
-    return f"browser-context--{module}--{version}--{model_part}"
+def _collect_v2_params_records(version_dir, area, version):
+    items = []
+    for f in sorted(version_dir.iterdir()):
+        if not f.is_file() or f.suffix != ".json":
+            continue
+        json_data = _read_json_if_exists(f)
+        if json_data is None:
+            continue
+        stem = f.stem
+        record = {
+            "id": f"{area}--params--{version}--{_normalize_model(stem)}",
+            "kind": "params",
+            "version": json_data.get("version", "1.0"),
+            "area": area,
+            "model": stem,
+        }
+        for key, value in json_data.items():
+            if key not in record:
+                record[key] = value
+        items.append(record)
+    return items
 
 
 def _collect_v2_skill_records(version_dir, name, version):

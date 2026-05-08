@@ -190,21 +190,21 @@ def temp_v2_prompts_dir():
             f.write("Legacy prompt")
 
         v2 = repo_path / "prompts_v2"
-        identity = v2 / "features" / "assistant" / "identity" / "v1"
+        identity = v2 / "features" / "chat" / "identity" / "v1"
         identity.mkdir(parents=True)
         with open(identity / "generic.json", "w") as f:
             json.dump({"version": "1.0"}, f)
         with open(identity / "generic.md", "w") as f:
             f.write("# Identity\nYou are Smart Window.")
 
-        model_details = v2 / "features" / "assistant" / "model-details" / "v1"
+        model_details = v2 / "features" / "chat" / "model-details" / "v1"
         model_details.mkdir(parents=True)
         with open(model_details / "qwen3-235b-a22b-instruct-2507-maas.json", "w") as f:
             json.dump({"version": "1.0"}, f)
         with open(model_details / "qwen3-235b-a22b-instruct-2507-maas.md", "w") as f:
             f.write("Qwen-specific cutoff.")
 
-        params = v2 / "features" / "assistant" / "params" / "v1"
+        params = v2 / "features" / "chat" / "params" / "v1"
         params.mkdir(parents=True)
         with open(params / "generic.json", "w") as f:
             json.dump(
@@ -234,12 +234,13 @@ def temp_v2_prompts_dir():
         yield repo_path
 
 
-def test_collect_v2_records_assistant_module(temp_v2_prompts_dir):
+def test_collect_v2_records_module(temp_v2_prompts_dir):
     records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
     identity = next(r for r in records if r.get("module") == "identity")
-    assert identity["id"] == "module--identity--v1--generic"
+    assert identity["id"] == "chat--identity--v1--generic"
     assert identity["kind"] == "system-prompt-module"
     assert identity["version"] == "1.0"
+    assert identity["area"] == "chat"
     assert identity["model"] == "generic"
     assert identity["prompt"] == "# Identity\nYou are Smart Window."
 
@@ -247,16 +248,16 @@ def test_collect_v2_records_assistant_module(temp_v2_prompts_dir):
 def test_collect_v2_records_model_specific(temp_v2_prompts_dir):
     records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
     qwen = next(r for r in records if r.get("module") == "model-details")
-    assert qwen["id"] == "module--model-details--v1--qwen3-235b-a22b-instruct-2507-maas"
+    assert qwen["id"] == "chat--model-details--v1--qwen3-235b-a22b-instruct-2507-maas"
     assert qwen["model"] == "qwen3-235b-a22b-instruct-2507-maas"
 
 
 def test_collect_v2_records_browser_context(temp_v2_prompts_dir):
     records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
-    tab = next(r for r in records if r.get("fragment") == "tab")
+    tab = next(r for r in records if r.get("area") == "browser-context")
     assert tab["id"] == "browser-context--tab--v1--generic"
-    assert tab["kind"] == "browser-context-fragment"
-    assert "module" not in tab
+    assert tab["kind"] == "system-prompt-module"
+    assert tab["module"] == "tab"
 
 
 def test_collect_v2_records_skill(temp_v2_prompts_dir):
@@ -271,15 +272,75 @@ def test_collect_v2_records_skill(temp_v2_prompts_dir):
 def test_collect_v2_records_params(temp_v2_prompts_dir):
     records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
     params = next(r for r in records if r.get("kind") == "params")
-    assert params["id"] == "params--v1"
+    assert params["id"] == "chat--params--v1--generic"
+    assert params["area"] == "chat"
+    assert params["model"] == "generic"
     assert params["temperature"] == 1.0
     assert params["purpose"] == "chat"
     assert params["service_type"] == "ai"
     assert "prompt" not in params
 
 
+def test_collect_v2_records_params_loads_all_keys(temp_v2_prompts_dir):
+    # Drop in a JSON with arbitrary keys; all should be preserved on the record.
+    params_dir = temp_v2_prompts_dir / "prompts_v2" / "features" / "chat" / "params" / "v1"
+    with open(params_dir / "generic.json", "w") as f:
+        json.dump(
+            {
+                "version": "1.0",
+                "temperature": 0.7,
+                "top_p": 0.95,
+                "custom_flag": True,
+                "nested": {"a": 1},
+            },
+            f,
+        )
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    params = next(r for r in records if r.get("kind") == "params")
+    assert params["temperature"] == 0.7
+    assert params["top_p"] == 0.95
+    assert params["custom_flag"] is True
+    assert params["nested"] == {"a": 1}
+
+
+def test_collect_v2_records_params_per_model(temp_v2_prompts_dir):
+    # A params dir can have one JSON per model alongside generic.json.
+    params_dir = temp_v2_prompts_dir / "prompts_v2" / "features" / "chat" / "params" / "v1"
+    with open(params_dir / "qwen3-235b-a22b-instruct-2507-maas.json", "w") as f:
+        json.dump({"version": "1.0", "temperature": 0.5}, f)
+
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    params_records = [r for r in records if r.get("kind") == "params"]
+    by_model = {r["model"]: r for r in params_records}
+    assert "generic" in by_model
+    assert "qwen3-235b-a22b-instruct-2507-maas" in by_model
+    assert by_model["generic"]["id"] == "chat--params--v1--generic"
+    assert (
+        by_model["qwen3-235b-a22b-instruct-2507-maas"]["id"]
+        == "chat--params--v1--qwen3-235b-a22b-instruct-2507-maas"
+    )
+    assert by_model["qwen3-235b-a22b-instruct-2507-maas"]["temperature"] == 0.5
+
+
+def test_collect_v2_records_params_in_other_area(temp_v2_prompts_dir):
+    # params can appear under any area, not just chat.
+    bc_params = (
+        temp_v2_prompts_dir / "prompts_v2" / "features" / "browser-context" / "params" / "v1"
+    )
+    bc_params.mkdir(parents=True)
+    with open(bc_params / "generic.json", "w") as f:
+        json.dump({"version": "1.0", "max_tokens": 200}, f)
+
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    bc = next(
+        r for r in records if r.get("kind") == "params" and r.get("area") == "browser-context"
+    )
+    assert bc["id"] == "browser-context--params--v1--generic"
+    assert bc["max_tokens"] == 200
+
+
 def test_collect_v2_records_normalizes_dots_in_model_name(temp_v2_prompts_dir):
-    gemini = temp_v2_prompts_dir / "prompts_v2" / "features" / "assistant" / "model-details" / "v1"
+    gemini = temp_v2_prompts_dir / "prompts_v2" / "features" / "chat" / "model-details" / "v1"
     with open(gemini / "gemini-2.5-flash-lite.json", "w") as f:
         json.dump({"version": "1.0"}, f)
     with open(gemini / "gemini-2.5-flash-lite.md", "w") as f:
@@ -287,7 +348,7 @@ def test_collect_v2_records_normalizes_dots_in_model_name(temp_v2_prompts_dir):
 
     records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
     rec = next(r for r in records if r.get("model") == "gemini-2.5-flash-lite")
-    assert rec["id"] == "module--model-details--v1--gemini-2-5-flash-lite"
+    assert rec["id"] == "chat--model-details--v1--gemini-2-5-flash-lite"
 
 
 def test_collect_v2_records_no_v2_dir():
@@ -299,8 +360,8 @@ def test_collect_v2_records_no_v2_dir():
 
 def test_fetch_current_prompts_includes_v2(temp_v2_prompts_dir, capsys):
     records = fetch_current_prompts(temp_v2_prompts_dir)
-    legacy = [r for r in records if r.get("id", "").startswith("chat--")]
-    v2 = [r for r in records if r.get("kind") in {"system-prompt-module", "skill", "params", "browser-context-fragment"}]
+    legacy = [r for r in records if r.get("id", "").startswith("chat--") and "kind" not in r]
+    v2 = [r for r in records if r.get("kind") in {"system-prompt-module", "skill", "params"}]
     assert len(legacy) == 1
     assert len(v2) >= 4
     output = capsys.readouterr().out
