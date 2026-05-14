@@ -134,13 +134,17 @@ def collect_prompts_and_params(prompts_dir):
 # prompts_v2 ingestion
 #
 # Layout:
-#   features/<area>/<module>/v#/<model|generic>.{json,md}
-#     - regular modules: .md is the prompt body; optional .json sidecar
-#     - module == "params": JSON-only generation params (one per model)
+#   features/<feature>/<module>/v#/<model|generic>.{json,md}
+#     - regular modules: .md is the prompt body; optional .json sidecar (one
+#       sidecar per model, paired by stem with the .md file)
+#     - module == "params": JSON-only generation params (one per model). The
+#       params module may live under any feature, not only "chat".
 #   skills/<name>/v#/<model|generic>.{json,md}
 #
-# Records carry a `kind` discriminator: "system-prompt-module", "params", or
-# "skill". Areas are open-ended — new areas drop in without an updater change.
+# Records carry a `kind` discriminator: "module", "params", or "skill". The
+# enum is open-ended — additional kinds will be added as more legacy prompts
+# migrate into prompts_v2 (e.g. memories-relevant-context, title-generation).
+# Features are open-ended too — new features drop in without an updater change.
 
 
 def _normalize_model(stem):
@@ -148,10 +152,14 @@ def _normalize_model(stem):
 
 
 def _read_json_if_exists(path):
-    if not path.exists():
-        return None
+    """Return the parsed JSON sidecar at ``path`` or an empty dict when the
+    file is missing or empty. Returning {} (instead of None) lets call sites
+    use ``json_data.get("version", "1.0")`` uniformly without ``or {}`` guards.
+    """
+    if path is None or not path.exists():
+        return {}
     with open(path, "r") as f:
-        return json.load(f)
+        return json.load(f) or {}
 
 
 def _pair_files_by_stem(directory):
@@ -166,10 +174,10 @@ def collect_v2_records(prompts_v2_dir):
     items = []
     features_dir = prompts_v2_dir / "features"
     if features_dir.exists():
-        for area_dir in sorted(features_dir.iterdir()):
-            if not area_dir.is_dir():
+        for feature_dir in sorted(features_dir.iterdir()):
+            if not feature_dir.is_dir():
                 continue
-            for module_dir in sorted(area_dir.iterdir()):
+            for module_dir in sorted(feature_dir.iterdir()):
                 if not module_dir.is_dir():
                     continue
                 for version_dir in sorted(module_dir.iterdir()):
@@ -177,7 +185,7 @@ def collect_v2_records(prompts_v2_dir):
                         continue
                     items.extend(
                         _collect_v2_module_records(
-                            version_dir, area_dir.name, module_dir.name, version_dir.name
+                            version_dir, feature_dir.name, module_dir.name, version_dir.name
                         )
                     )
 
@@ -196,22 +204,22 @@ def collect_v2_records(prompts_v2_dir):
     return items
 
 
-def _collect_v2_module_records(version_dir, area, module, version):
+def _collect_v2_module_records(version_dir, feature, module, version):
     if module == "params":
-        return _collect_v2_params_records(version_dir, area, version)
+        return _collect_v2_params_records(version_dir, feature, version)
 
     items = []
     for stem, paths in sorted(_pair_files_by_stem(version_dir).items()):
         md_path = paths.get(".md")
         if md_path is None:
             continue  # no prompt content; skip
-        json_data = _read_json_if_exists(paths[".json"]) if ".json" in paths else None
+        json_data = _read_json_if_exists(paths.get(".json"))
         items.append(
             {
-                "id": f"{area}--{module}--{version}--{_normalize_model(stem)}",
-                "kind": "system-prompt-module",
-                "version": (json_data or {}).get("version", "1.0"),
-                "area": area,
+                "id": f"{feature}--{module}--{version}--{_normalize_model(stem)}",
+                "kind": "module",
+                "version": json_data.get("version", "1.0"),
+                "feature": feature,
                 "module": module,
                 "model": stem,
                 "prompt": md_path.read_text(),
@@ -220,20 +228,20 @@ def _collect_v2_module_records(version_dir, area, module, version):
     return items
 
 
-def _collect_v2_params_records(version_dir, area, version):
+def _collect_v2_params_records(version_dir, feature, version):
     items = []
     for f in sorted(version_dir.iterdir()):
         if not f.is_file() or f.suffix != ".json":
             continue
         json_data = _read_json_if_exists(f)
-        if json_data is None:
+        if not json_data:
             continue
         stem = f.stem
         record = {
-            "id": f"{area}--params--{version}--{_normalize_model(stem)}",
+            "id": f"{feature}--params--{version}--{_normalize_model(stem)}",
             "kind": "params",
             "version": json_data.get("version", "1.0"),
-            "area": area,
+            "feature": feature,
             "model": stem,
         }
         for key, value in json_data.items():
@@ -249,15 +257,15 @@ def _collect_v2_skill_records(version_dir, name, version):
         md_path = paths.get(".md")
         if md_path is None:
             continue
-        json_data = _read_json_if_exists(paths[".json"]) if ".json" in paths else None
+        json_data = _read_json_if_exists(paths.get(".json"))
         items.append(
             {
                 "id": f"skill--{name}--{version}--{_normalize_model(stem)}",
                 "kind": "skill",
-                "version": (json_data or {}).get("version", "1.0"),
+                "version": json_data.get("version", "1.0"),
                 "name": name,
                 "model": stem,
-                "description": (json_data or {}).get("description", ""),
+                "description": json_data.get("description", ""),
                 "prompt": md_path.read_text(),
             }
         )

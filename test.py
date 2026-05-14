@@ -238,9 +238,9 @@ def test_collect_v2_records_module(temp_v2_prompts_dir):
     records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
     identity = next(r for r in records if r.get("module") == "identity")
     assert identity["id"] == "chat--identity--v1--generic"
-    assert identity["kind"] == "system-prompt-module"
+    assert identity["kind"] == "module"
     assert identity["version"] == "1.0"
-    assert identity["area"] == "chat"
+    assert identity["feature"] == "chat"
     assert identity["model"] == "generic"
     assert identity["prompt"] == "# Identity\nYou are Smart Window."
 
@@ -254,9 +254,9 @@ def test_collect_v2_records_model_specific(temp_v2_prompts_dir):
 
 def test_collect_v2_records_browser_context(temp_v2_prompts_dir):
     records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
-    tab = next(r for r in records if r.get("area") == "browser-context")
+    tab = next(r for r in records if r.get("feature") == "browser-context")
     assert tab["id"] == "browser-context--tab--v1--generic"
-    assert tab["kind"] == "system-prompt-module"
+    assert tab["kind"] == "module"
     assert tab["module"] == "tab"
 
 
@@ -273,7 +273,7 @@ def test_collect_v2_records_params(temp_v2_prompts_dir):
     records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
     params = next(r for r in records if r.get("kind") == "params")
     assert params["id"] == "chat--params--v1--generic"
-    assert params["area"] == "chat"
+    assert params["feature"] == "chat"
     assert params["model"] == "generic"
     assert params["temperature"] == 1.0
     assert params["purpose"] == "chat"
@@ -322,8 +322,8 @@ def test_collect_v2_records_params_per_model(temp_v2_prompts_dir):
     assert by_model["qwen3-235b-a22b-instruct-2507-maas"]["temperature"] == 0.5
 
 
-def test_collect_v2_records_params_in_other_area(temp_v2_prompts_dir):
-    # params can appear under any area, not just chat.
+def test_collect_v2_records_params_in_other_feature(temp_v2_prompts_dir):
+    # params can appear under any feature, not just chat.
     bc_params = (
         temp_v2_prompts_dir / "prompts_v2" / "features" / "browser-context" / "params" / "v1"
     )
@@ -333,7 +333,7 @@ def test_collect_v2_records_params_in_other_area(temp_v2_prompts_dir):
 
     records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
     bc = next(
-        r for r in records if r.get("kind") == "params" and r.get("area") == "browser-context"
+        r for r in records if r.get("kind") == "params" and r.get("feature") == "browser-context"
     )
     assert bc["id"] == "browser-context--params--v1--generic"
     assert bc["max_tokens"] == 200
@@ -361,7 +361,7 @@ def test_collect_v2_records_no_v2_dir():
 def test_fetch_current_prompts_includes_v2(temp_v2_prompts_dir, capsys):
     records = fetch_current_prompts(temp_v2_prompts_dir)
     legacy = [r for r in records if r.get("id", "").startswith("chat--") and "kind" not in r]
-    v2 = [r for r in records if r.get("kind") in {"system-prompt-module", "skill", "params"}]
+    v2 = [r for r in records if r.get("kind") in {"module", "skill", "params"}]
     assert len(legacy) == 1
     assert len(v2) >= 4
     output = capsys.readouterr().out
