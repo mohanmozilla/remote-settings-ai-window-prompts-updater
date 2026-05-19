@@ -213,16 +213,14 @@ def _collect_v2_module_records(version_dir, feature, module, version):
         md_path = paths.get(".md")
         if md_path is None:
             continue  # no prompt content; skip
-        json_data = _read_json_if_exists(paths.get(".json"))
         items.append(
             {
                 "id": f"{feature}--{module}--{version}--{_normalize_model(stem)}",
                 "kind": "module",
-                "version": json_data.get("version", "1.0"),
                 "feature": feature,
                 "module": module,
                 "model": stem,
-                "prompt": md_path.read_text(),
+                "prompts": md_path.read_text(),
             }
         )
     return items
@@ -240,13 +238,10 @@ def _collect_v2_params_records(version_dir, feature, version):
         record = {
             "id": f"{feature}--params--{version}--{_normalize_model(stem)}",
             "kind": "params",
-            "version": json_data.get("version", "1.0"),
             "feature": feature,
             "model": stem,
         }
-        for key, value in json_data.items():
-            if key not in record:
-                record[key] = value
+        record |= json_data
         items.append(record)
     return items
 
@@ -262,11 +257,10 @@ def _collect_v2_skill_records(version_dir, name, version):
             {
                 "id": f"skill--{name}--{version}--{_normalize_model(stem)}",
                 "kind": "skill",
-                "version": json_data.get("version", "1.0"),
                 "name": name,
                 "model": stem,
                 "description": json_data.get("description", ""),
-                "prompt": md_path.read_text(),
+                "prompts": md_path.read_text(),
             }
         )
     return items
