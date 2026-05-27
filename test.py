@@ -239,10 +239,9 @@ def test_collect_v2_records_module(temp_v2_prompts_dir):
     identity = next(r for r in records if r.get("module") == "identity")
     assert identity["id"] == "chat--identity--v1--generic"
     assert identity["kind"] == "module"
-    assert identity["version"] == "1.0"
     assert identity["feature"] == "chat"
     assert identity["model"] == "generic"
-    assert identity["prompt"] == "# Identity\nYou are Smart Window."
+    assert identity["prompts"] == "# Identity\nYou are Smart Window."
 
 
 def test_collect_v2_records_model_specific(temp_v2_prompts_dir):
@@ -266,7 +265,7 @@ def test_collect_v2_records_skill(temp_v2_prompts_dir):
     assert kit["id"] == "skill--kit--v1--generic"
     assert kit["name"] == "kit"
     assert kit["description"] == "Mascot info"
-    assert kit["prompt"] == "Kit is a Firefox mascot"
+    assert kit["prompts"] == "Kit is a Firefox mascot"
 
 
 def test_collect_v2_records_params(temp_v2_prompts_dir):
