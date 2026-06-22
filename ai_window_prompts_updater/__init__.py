@@ -226,6 +226,9 @@ def _collect_v2_module_records(version_dir, feature, module, version):
     return items
 
 
+PARAMS_RESERVED_KEYS = frozenset({"id", "kind", "feature", "model"})
+
+
 def _collect_v2_params_records(version_dir, feature, version):
     items = []
     for f in sorted(version_dir.iterdir()):
@@ -235,14 +238,22 @@ def _collect_v2_params_records(version_dir, feature, version):
         if not json_data:
             continue
         stem = f.stem
-        record = {
-            "id": f"{feature}--params--{version}--{_normalize_model(stem)}",
-            "kind": "params",
-            "feature": feature,
-            "model": stem,
-        }
-        record |= json_data
-        items.append(record)
+        conflicts = PARAMS_RESERVED_KEYS & set(json_data)
+        if conflicts:
+            raise ValueError(
+                f"{f}: params JSON contains reserved key(s) {sorted(conflicts)} "
+                "which would clobber the record's computed identity fields; "
+                "remove them from the params file."
+            )
+        items.append(
+            {
+                **json_data,
+                "id": f"{feature}--params--{version}--{_normalize_model(stem)}",
+                "kind": "params",
+                "feature": feature,
+                "model": stem,
+            }
+        )
     return items
 
 

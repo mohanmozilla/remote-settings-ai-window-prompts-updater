@@ -338,6 +338,17 @@ def test_collect_v2_records_params_in_other_feature(temp_v2_prompts_dir):
     assert bc["max_tokens"] == 200
 
 
+def test_collect_v2_records_params_rejects_reserved_keys(temp_v2_prompts_dir):
+    # Reserved keys (id/kind/feature/model) must not silently clobber the
+    # computed identity fields; the updater should refuse to ingest such a file.
+    params_dir = temp_v2_prompts_dir / "prompts_v2" / "features" / "chat" / "params" / "v1"
+    with open(params_dir / "generic.json", "w") as f:
+        json.dump({"version": "1.0", "feature": "rogue", "temperature": 0.1}, f)
+
+    with pytest.raises(ValueError, match="reserved key"):
+        collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+
+
 def test_collect_v2_records_normalizes_dots_in_model_name(temp_v2_prompts_dir):
     gemini = temp_v2_prompts_dir / "prompts_v2" / "features" / "chat" / "model-details" / "v1"
     with open(gemini / "gemini-2.5-flash-lite.json", "w") as f:
