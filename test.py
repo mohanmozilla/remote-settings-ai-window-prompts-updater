@@ -62,7 +62,7 @@ def test_main_anonymous(mocked_client, capsys):
     main()
 
     mocked_client.server_info.assert_called_once()
-    assert "⚠️ Anonymous" in capsys.readouterr().out
+    assert "Anonymous" in capsys.readouterr().out
 
 
 def test_main_logged_in(mocked_client, capsys):
@@ -94,7 +94,7 @@ def test_clone_repo_success(mock_run, capsys, env, expected_branch):
     assert result != ""
     assert branch_name == expected_branch
     assert "ai-window-remote-settings-prompts" in str(result)
-    assert "✅ Repository cloned successfully" in capsys.readouterr().out
+    assert "Repository cloned successfully" in capsys.readouterr().out
     mock_run.assert_called_once()
 
 
@@ -390,8 +390,8 @@ def test_fetch_current_prompts(mock_collect, mock_rmtree, temp_prompts_dir, caps
     mock_collect.assert_called_once()
     mock_rmtree.assert_called_once()
     output = capsys.readouterr().out
-    assert "📦 Found 2 prompt records" in output
-    assert "🧹 Cleaned up temporary directory" in output
+    assert "Found 2 prompt records" in output
+    assert "Cleaned up temporary directory" in output
 
 
 def test_fetch_current_prompts_missing_directory(capsys):
@@ -485,7 +485,7 @@ def test_sync_collection_dev_auto_approve(capsys):
     mock_client.request_review.assert_called_once()
     mock_client.approve_changes.assert_called_once()
     output = capsys.readouterr().out
-    assert "🟢 Self-approving changes on dev" in output
+    assert "Self-approving changes on dev" in output
 
 
 def test_sync_collection_fetch_error(capsys):
