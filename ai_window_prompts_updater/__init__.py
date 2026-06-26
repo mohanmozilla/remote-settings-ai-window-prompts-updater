@@ -61,7 +61,8 @@ def clone_repo(branch):
         if GIT_TOKEN:
             git_url = PROMPTS_REPO.replace("https://", f"https://{GIT_TOKEN}@")
         else:
-            raise RuntimeError("GIT_TOKEN not found")
+            # Public repo: clone anonymously when no token is available (e.g. fork-PR CI).
+            git_url = PROMPTS_REPO
 
         # Clone stage to stage, prod gets cloned to dev and prod
         result = subprocess.run(

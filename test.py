@@ -124,6 +124,20 @@ def test_clone_repo_with_token(mock_run):
     assert "https://test_token@github.com/test/repo.git" in call_args
 
 
+@mock.patch("ai_window_prompts_updater.GIT_TOKEN", None)
+@mock.patch("ai_window_prompts_updater.PROMPTS_REPO", "https://github.com/test/repo.git")
+@mock.patch("ai_window_prompts_updater.subprocess.run")
+def test_clone_repo_without_token(mock_run):
+    mock_run.return_value = mock.Mock(returncode=0, stderr="")
+
+    clone_repo("prod")
+
+    # No token: clone the public repo anonymously (plain URL, no credentials).
+    call_args = mock_run.call_args[0][0]
+    assert "https://github.com/test/repo.git" in call_args
+    assert "@" not in " ".join(call_args)
+
+
 # Tests for get_item function
 def test_get_item(temp_prompts_dir):
     version_dir = temp_prompts_dir / "chat" / "v1"
