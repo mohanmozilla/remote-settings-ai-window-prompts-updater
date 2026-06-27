@@ -152,6 +152,13 @@ def _normalize_model(stem):
     return stem.replace(".", "-")
 
 
+def _module_version(version_segment):
+    # Numeric "{major}.{minor}" version (e.g. "1.0") from a "v1" dir name, so
+    # records match the version field shape used by v1 prompts.
+    digits = "".join(ch for ch in str(version_segment) if ch.isdigit())
+    return f"{int(digits)}.0" if digits else "1.0"
+
+
 def _read_json_if_exists(path):
     """Return the parsed JSON sidecar at ``path`` or an empty dict when the
     file is missing or empty. Returning {} (instead of None) lets call sites
@@ -221,6 +228,7 @@ def _collect_v2_module_records(version_dir, feature, module, version):
                 "feature": feature,
                 "module": module,
                 "model": stem,
+                "version": _module_version(version),
                 "prompts": md_path.read_text(),
             }
         )
@@ -271,6 +279,7 @@ def _collect_v2_skill_records(version_dir, name, version):
                 "kind": "skill",
                 "name": name,
                 "model": stem,
+                "version": _module_version(version),
                 "description": json_data.get("description", ""),
                 "prompts": md_path.read_text(),
             }

@@ -255,6 +255,7 @@ def test_collect_v2_records_module(temp_v2_prompts_dir):
     assert identity["kind"] == "module"
     assert identity["feature"] == "chat"
     assert identity["model"] == "generic"
+    assert identity["version"] == "1.0"
     assert identity["prompts"] == "# Identity\nYou are Smart Window."
 
 
@@ -278,6 +279,7 @@ def test_collect_v2_records_skill(temp_v2_prompts_dir):
     kit = next(r for r in records if r.get("kind") == "skill")
     assert kit["id"] == "skill--kit--v1--generic"
     assert kit["name"] == "kit"
+    assert kit["version"] == "1.0"
     assert kit["description"] == "Mascot info"
     assert kit["prompts"] == "Kit is a Firefox mascot"
 
