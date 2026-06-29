@@ -223,7 +223,7 @@ def _collect_v2_module_records(version_dir, feature, module, version):
             continue  # no prompt content; skip
         items.append(
             {
-                "id": f"{feature}--{module}--{version}--{_normalize_model(stem)}",
+                "id": f"{feature}--{module}--{_normalize_model(stem)}--{version}",
                 "kind": "module",
                 "feature": feature,
                 "module": module,
@@ -257,7 +257,7 @@ def _collect_v2_params_records(version_dir, feature, version):
         items.append(
             {
                 **json_data,
-                "id": f"{feature}--params--{version}--{_normalize_model(stem)}",
+                "id": f"{feature}--params--{_normalize_model(stem)}--{version}",
                 "kind": "params",
                 "feature": feature,
                 "model": stem,
@@ -275,7 +275,7 @@ def _collect_v2_skill_records(version_dir, name, version):
         json_data = _read_json_if_exists(paths.get(".json"))
         items.append(
             {
-                "id": f"skill--{name}--{version}--{_normalize_model(stem)}",
+                "id": f"skill--{name}--{_normalize_model(stem)}--{version}",
                 "kind": "skill",
                 "name": name,
                 "model": stem,

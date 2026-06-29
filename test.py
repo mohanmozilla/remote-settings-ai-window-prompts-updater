@@ -251,7 +251,7 @@ def temp_v2_prompts_dir():
 def test_collect_v2_records_module(temp_v2_prompts_dir):
     records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
     identity = next(r for r in records if r.get("module") == "identity")
-    assert identity["id"] == "chat--identity--v1--generic"
+    assert identity["id"] == "chat--identity--generic--v1"
     assert identity["kind"] == "module"
     assert identity["feature"] == "chat"
     assert identity["model"] == "generic"
@@ -262,14 +262,14 @@ def test_collect_v2_records_module(temp_v2_prompts_dir):
 def test_collect_v2_records_model_specific(temp_v2_prompts_dir):
     records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
     qwen = next(r for r in records if r.get("module") == "model-details")
-    assert qwen["id"] == "chat--model-details--v1--qwen3-235b-a22b-instruct-2507-maas"
+    assert qwen["id"] == "chat--model-details--qwen3-235b-a22b-instruct-2507-maas--v1"
     assert qwen["model"] == "qwen3-235b-a22b-instruct-2507-maas"
 
 
 def test_collect_v2_records_browser_context(temp_v2_prompts_dir):
     records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
     tab = next(r for r in records if r.get("feature") == "browser-context")
-    assert tab["id"] == "browser-context--tab--v1--generic"
+    assert tab["id"] == "browser-context--tab--generic--v1"
     assert tab["kind"] == "module"
     assert tab["module"] == "tab"
 
@@ -277,7 +277,7 @@ def test_collect_v2_records_browser_context(temp_v2_prompts_dir):
 def test_collect_v2_records_skill(temp_v2_prompts_dir):
     records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
     kit = next(r for r in records if r.get("kind") == "skill")
-    assert kit["id"] == "skill--kit--v1--generic"
+    assert kit["id"] == "skill--kit--generic--v1"
     assert kit["name"] == "kit"
     assert kit["version"] == "1.0"
     assert kit["description"] == "Mascot info"
@@ -287,7 +287,7 @@ def test_collect_v2_records_skill(temp_v2_prompts_dir):
 def test_collect_v2_records_params(temp_v2_prompts_dir):
     records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
     params = next(r for r in records if r.get("kind") == "params")
-    assert params["id"] == "chat--params--v1--generic"
+    assert params["id"] == "chat--params--generic--v1"
     assert params["feature"] == "chat"
     assert params["model"] == "generic"
     assert params["temperature"] == 1.0
@@ -329,10 +329,10 @@ def test_collect_v2_records_params_per_model(temp_v2_prompts_dir):
     by_model = {r["model"]: r for r in params_records}
     assert "generic" in by_model
     assert "qwen3-235b-a22b-instruct-2507-maas" in by_model
-    assert by_model["generic"]["id"] == "chat--params--v1--generic"
+    assert by_model["generic"]["id"] == "chat--params--generic--v1"
     assert (
         by_model["qwen3-235b-a22b-instruct-2507-maas"]["id"]
-        == "chat--params--v1--qwen3-235b-a22b-instruct-2507-maas"
+        == "chat--params--qwen3-235b-a22b-instruct-2507-maas--v1"
     )
     assert by_model["qwen3-235b-a22b-instruct-2507-maas"]["temperature"] == 0.5
 
@@ -350,7 +350,7 @@ def test_collect_v2_records_params_in_other_feature(temp_v2_prompts_dir):
     bc = next(
         r for r in records if r.get("kind") == "params" and r.get("feature") == "browser-context"
     )
-    assert bc["id"] == "browser-context--params--v1--generic"
+    assert bc["id"] == "browser-context--params--generic--v1"
     assert bc["max_tokens"] == 200
 
 
@@ -374,7 +374,7 @@ def test_collect_v2_records_normalizes_dots_in_model_name(temp_v2_prompts_dir):
 
     records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
     rec = next(r for r in records if r.get("model") == "gemini-2.5-flash-lite")
-    assert rec["id"] == "chat--model-details--v1--gemini-2-5-flash-lite"
+    assert rec["id"] == "chat--model-details--gemini-2-5-flash-lite--v1"
 
 
 def test_collect_v2_records_no_v2_dir():
