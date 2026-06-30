@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -153,10 +154,17 @@ def _normalize_model(stem):
 
 
 def _module_version(version_segment):
-    # Numeric "{major}.{minor}" version (e.g. "1.0") from a "v1" dir name, so
-    # records match the version field shape used by v1 prompts.
-    digits = "".join(ch for ch in str(version_segment) if ch.isdigit())
-    return f"{int(digits)}.0" if digits else "1.0"
+    # "{major}.0" from a "v1" dir name. A module's minor is carried by the
+    # params manifest, not its directory, so the dir-derived fallback is
+    # major-only (and a dotted dir name can't corrupt the value).
+    major = _major_of(version_segment)
+    return f"{major}.0" if major is not None else "1.0"
+
+
+def _major_of(version_segment):
+    # Major version (int) from "v1", "1.0", "8.1", etc.; None when unparseable.
+    head = str(version_segment).lstrip("vV").split(".")[0]
+    return int(head) if head.isdigit() else None
 
 
 def _read_json_if_exists(path):
@@ -178,8 +186,65 @@ def _pair_files_by_stem(directory):
     return pairs
 
 
+def _collect_manifest_versions(prompts_v2_dir):
+    """Map (feature, module, major) -> full version string, read from the
+    ``modules`` manifest in each feature's params JSON. The params manifest is
+    the single source of truth for module versions (Firefox selects each module
+    by the version the manifest names), so module records are stamped from here
+    rather than from their own directory name. Last write wins when more than
+    one params file names the same (feature, module, major)."""
+    versions = {}
+    features_dir = prompts_v2_dir / "features"
+    if not features_dir.exists():
+        return versions
+    for feature_dir in sorted(features_dir.iterdir()):
+        params_root = feature_dir / "params"
+        if not params_root.is_dir():
+            continue
+        for version_dir in sorted(params_root.iterdir()):
+            if not version_dir.is_dir():
+                continue
+            for f in sorted(version_dir.glob("*.json")):
+                seen = set()
+                for entry in _read_json_if_exists(f).get("modules", []):
+                    name, ver = entry.get("name"), entry.get("version")
+                    if not name or ver is None:
+                        raise ValueError(
+                            f"{f}: each `modules` entry needs a 'name' and 'version'"
+                        )
+                    if not re.fullmatch(r"v?\d+\.\d+", str(ver)):
+                        raise ValueError(
+                            f"{f}: module '{name}' version '{ver}' must be "
+                            "'major.minor' (e.g. '1.0')"
+                        )
+                    if name in seen:
+                        raise ValueError(
+                            f"{f}: module '{name}' is listed more than once in `modules`"
+                        )
+                    seen.add(name)
+                    versions[(feature_dir.name, name, _major_of(ver))] = str(ver)
+    return versions
+
+
+def _require_manifest_content(manifest_versions, available_modules):
+    # Every (feature, module, major) a params manifest names must have a
+    # matching content directory; otherwise the manifest version can't be
+    # honored and Firefox would fail to assemble the prompt. Fail here (publish
+    # time) rather than shipping a record that hard-fails at runtime.
+    missing = sorted(k for k in manifest_versions if k not in available_modules)
+    if missing:
+        details = ", ".join(f"{feat}/{mod} (major {maj})" for feat, mod, maj in missing)
+        raise ValueError(
+            f"params manifest names modules with no matching content directory: "
+            f"{details}. Add the module's v<major> directory (with a .md), or "
+            "correct the manifest version."
+        )
+
+
 def collect_v2_records(prompts_v2_dir):
     items = []
+    manifest_versions = _collect_manifest_versions(prompts_v2_dir)
+    available_modules = set()
     features_dir = prompts_v2_dir / "features"
     if features_dir.exists():
         for feature_dir in sorted(features_dir.iterdir()):
@@ -191,11 +256,21 @@ def collect_v2_records(prompts_v2_dir):
                 for version_dir in sorted(module_dir.iterdir()):
                     if not version_dir.is_dir():
                         continue
-                    items.extend(
-                        _collect_v2_module_records(
-                            version_dir, feature_dir.name, module_dir.name, version_dir.name
-                        )
+                    records = _collect_v2_module_records(
+                        version_dir,
+                        feature_dir.name,
+                        module_dir.name,
+                        version_dir.name,
+                        manifest_versions,
                     )
+                    items.extend(records)
+                    major = _major_of(version_dir.name)
+                    if module_dir.name != "params" and records and major is not None:
+                        available_modules.add(
+                            (feature_dir.name, module_dir.name, major)
+                        )
+
+    _require_manifest_content(manifest_versions, available_modules)
 
     skills_dir = prompts_v2_dir / "skills"
     if skills_dir.exists():
@@ -212,9 +287,15 @@ def collect_v2_records(prompts_v2_dir):
     return items
 
 
-def _collect_v2_module_records(version_dir, feature, module, version):
+def _collect_v2_module_records(version_dir, feature, module, version, manifest_versions):
     if module == "params":
         return _collect_v2_params_records(version_dir, feature, version)
+
+    # Version is stamped from the params manifest for this (feature, module,
+    # major); fall back to the dir-derived version when no manifest names it.
+    record_version = manifest_versions.get(
+        (feature, module, _major_of(version)), _module_version(version)
+    )
 
     items = []
     for stem, paths in sorted(_pair_files_by_stem(version_dir).items()):
@@ -228,7 +309,7 @@ def _collect_v2_module_records(version_dir, feature, module, version):
                 "feature": feature,
                 "module": module,
                 "model": stem,
-                "version": _module_version(version),
+                "version": record_version,
                 "prompts": md_path.read_text(),
             }
         )

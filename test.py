@@ -255,8 +255,92 @@ def test_collect_v2_records_module(temp_v2_prompts_dir):
     assert identity["kind"] == "module"
     assert identity["feature"] == "chat"
     assert identity["model"] == "generic"
-    assert identity["version"] == "1.0"
+    assert identity["version"] == "1.0"  # no manifest in fixture -> dir-derived
     assert identity["prompts"] == "# Identity\nYou are Smart Window."
+
+
+def test_collect_v2_records_module_version_from_manifest(temp_v2_prompts_dir):
+    # The params manifest is the source of truth for module versions: a module
+    # record's version is stamped from the manifest entry (matched by feature +
+    # module + major), not from its directory name. The id stays keyed by the
+    # dir (one record per major), so only the version field reflects the minor.
+    params_dir = temp_v2_prompts_dir / "prompts_v2" / "features" / "chat" / "params" / "v1"
+    with open(params_dir / "generic.json", "w") as f:
+        json.dump(
+            {
+                "version": "1.0",
+                "temperature": 1.0,
+                "modules": [
+                    {"name": "identity", "version": "1.4"},
+                    {"name": "model-details", "version": "1.0"},
+                ],
+            },
+            f,
+        )
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    by_module = {r.get("module"): r for r in records if r.get("kind") == "module"}
+    assert by_module["identity"]["version"] == "1.4"
+    assert by_module["identity"]["id"] == "chat--identity--generic--v1"
+    # A module the manifest does not name keeps its dir-derived version.
+    assert by_module["model-details"]["version"] == "1.0"
+    # The chat manifest must not bleed into another feature's modules.
+    tab = next(r for r in records if r.get("feature") == "browser-context")
+    assert tab["version"] == "1.0"
+
+
+def test_collect_v2_records_rejects_bad_manifest_version(temp_v2_prompts_dir):
+    # Manifest versions must be "major.minor"; a bare integer is rejected so the
+    # stamped record version always parses the same way Firefox selects on.
+    params_dir = temp_v2_prompts_dir / "prompts_v2" / "features" / "chat" / "params" / "v1"
+    with open(params_dir / "generic.json", "w") as f:
+        json.dump({"version": "1.0", "modules": [{"name": "identity", "version": "1"}]}, f)
+
+    with pytest.raises(ValueError, match="major.minor"):
+        collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+
+
+def test_collect_v2_records_rejects_duplicate_manifest_module(temp_v2_prompts_dir):
+    params_dir = temp_v2_prompts_dir / "prompts_v2" / "features" / "chat" / "params" / "v1"
+    with open(params_dir / "generic.json", "w") as f:
+        json.dump(
+            {
+                "version": "1.0",
+                "modules": [
+                    {"name": "identity", "version": "1.0"},
+                    {"name": "identity", "version": "1.1"},
+                ],
+            },
+            f,
+        )
+
+    with pytest.raises(ValueError, match="more than once"):
+        collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+
+
+def test_collect_v2_records_rejects_manifest_module_without_content_dir(
+    temp_v2_prompts_dir,
+):
+    # Manifest names identity at major 2, but only an identity/v1 dir exists, so
+    # the manifest version can't be honored -> reject at publish time rather than
+    # ship a record that hard-fails Firefox assembly.
+    params_dir = temp_v2_prompts_dir / "prompts_v2" / "features" / "chat" / "params" / "v1"
+    with open(params_dir / "generic.json", "w") as f:
+        json.dump(
+            {"version": "1.0", "modules": [{"name": "identity", "version": "2.0"}]}, f
+        )
+
+    with pytest.raises(ValueError, match="no matching content director"):
+        collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+
+
+def test_module_version_is_major_only():
+    from ai_window_prompts_updater import _module_version
+
+    assert _module_version("v1") == "1.0"
+    assert _module_version("v2") == "2.0"
+    # A dotted dir name must not corrupt into "25.0" (the module minor lives in
+    # the params manifest, not the directory).
+    assert _module_version("v2.5") == "2.0"
 
 
 def test_collect_v2_records_model_specific(temp_v2_prompts_dir):
