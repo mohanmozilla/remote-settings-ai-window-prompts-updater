@@ -17,6 +17,8 @@ permissions:
 jobs:
   build-and-publish:
     name: Build and publish the container image
+    # Fork PRs can't access the GCP/OIDC secrets this job needs; skip them (runs on push + same-repo PRs).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     uses: mozilla/remote-settings/.github/workflows/ingestion-job-publish.yaml@main
     with:
       # Publish `main` branch to `nonprod` and tags to `prod`

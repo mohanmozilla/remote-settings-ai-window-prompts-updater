@@ -9,6 +9,7 @@ from kinto_http import KintoException
 from ai_window_prompts_updater import (
     clone_repo,
     collect_prompts_and_params,
+    collect_v2_records,
     fetch_current_prompts,
     get_item,
     main,
@@ -61,7 +62,7 @@ def test_main_anonymous(mocked_client, capsys):
     main()
 
     mocked_client.server_info.assert_called_once()
-    assert "⚠️ Anonymous" in capsys.readouterr().out
+    assert "Anonymous" in capsys.readouterr().out
 
 
 def test_main_logged_in(mocked_client, capsys):
@@ -93,7 +94,7 @@ def test_clone_repo_success(mock_run, capsys, env, expected_branch):
     assert result != ""
     assert branch_name == expected_branch
     assert "ai-window-remote-settings-prompts" in str(result)
-    assert "✅ Repository cloned successfully" in capsys.readouterr().out
+    assert "Repository cloned successfully" in capsys.readouterr().out
     mock_run.assert_called_once()
 
 
@@ -121,6 +122,20 @@ def test_clone_repo_with_token(mock_run):
     # Verify token was inserted into URL
     call_args = mock_run.call_args[0][0]
     assert "https://test_token@github.com/test/repo.git" in call_args
+
+
+@mock.patch("ai_window_prompts_updater.GIT_TOKEN", None)
+@mock.patch("ai_window_prompts_updater.PROMPTS_REPO", "https://github.com/test/repo.git")
+@mock.patch("ai_window_prompts_updater.subprocess.run")
+def test_clone_repo_without_token(mock_run):
+    mock_run.return_value = mock.Mock(returncode=0, stderr="")
+
+    clone_repo("prod")
+
+    # No token: clone the public repo anonymously (plain URL, no credentials).
+    call_args = mock_run.call_args[0][0]
+    assert "https://github.com/test/repo.git" in call_args
+    assert "@" not in " ".join(call_args)
 
 
 # Tests for get_item function
@@ -172,6 +187,213 @@ def test_collect_prompts_and_params_multiple_versions(temp_prompts_dir):
 
 
 # Tests for fetch_current_prompts function
+@pytest.fixture
+def temp_v2_prompts_dir():
+    """Create a temporary repo with both prompts/ (legacy) and prompts_v2/ trees."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        repo_path = Path(temp_dir) / "repo"
+
+        legacy = repo_path / "prompts" / "chat" / "v1"
+        legacy.mkdir(parents=True)
+        with open(legacy / "claude.3.5.json", "w") as f:
+            json.dump(
+                {"feature": "chat", "model": "claude.3.5", "parameters": {"temperature": 0.7}},
+                f,
+            )
+        with open(legacy / "claude.3.5.md", "w") as f:
+            f.write("Legacy prompt")
+
+        v2 = repo_path / "prompts_v2"
+        identity = v2 / "features" / "chat" / "identity" / "v1"
+        identity.mkdir(parents=True)
+        with open(identity / "generic.json", "w") as f:
+            json.dump({"version": "1.0"}, f)
+        with open(identity / "generic.md", "w") as f:
+            f.write("# Identity\nYou are Smart Window.")
+
+        model_details = v2 / "features" / "chat" / "model-details" / "v1"
+        model_details.mkdir(parents=True)
+        with open(model_details / "qwen3-235b-a22b-instruct-2507-maas.json", "w") as f:
+            json.dump({"version": "1.0"}, f)
+        with open(model_details / "qwen3-235b-a22b-instruct-2507-maas.md", "w") as f:
+            f.write("Qwen-specific cutoff.")
+
+        params = v2 / "features" / "chat" / "params" / "v1"
+        params.mkdir(parents=True)
+        with open(params / "generic.json", "w") as f:
+            json.dump(
+                {
+                    "version": "1.0",
+                    "temperature": 1.0,
+                    "purpose": "chat",
+                    "service_type": "ai",
+                },
+                f,
+            )
+
+        tab = v2 / "features" / "browser-context" / "tab" / "v1"
+        tab.mkdir(parents=True)
+        with open(tab / "generic.json", "w") as f:
+            json.dump({"version": "1.0"}, f)
+        with open(tab / "generic.md", "w") as f:
+            f.write("This is my active tab")
+
+        kit = v2 / "skills" / "kit" / "v1"
+        kit.mkdir(parents=True)
+        with open(kit / "generic.json", "w") as f:
+            json.dump({"version": "1.0", "description": "Mascot info"}, f)
+        with open(kit / "generic.md", "w") as f:
+            f.write("Kit is a Firefox mascot")
+
+        yield repo_path
+
+
+def test_collect_v2_records_module(temp_v2_prompts_dir):
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    identity = next(r for r in records if r.get("module") == "identity")
+    assert identity["id"] == "chat--identity--generic--v1"
+    assert identity["kind"] == "module"
+    assert identity["feature"] == "chat"
+    assert identity["model"] == "generic"
+    assert identity["version"] == "1.0"
+    assert identity["prompts"] == "# Identity\nYou are Smart Window."
+
+
+def test_collect_v2_records_model_specific(temp_v2_prompts_dir):
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    qwen = next(r for r in records if r.get("module") == "model-details")
+    assert qwen["id"] == "chat--model-details--qwen3-235b-a22b-instruct-2507-maas--v1"
+    assert qwen["model"] == "qwen3-235b-a22b-instruct-2507-maas"
+
+
+def test_collect_v2_records_browser_context(temp_v2_prompts_dir):
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    tab = next(r for r in records if r.get("feature") == "browser-context")
+    assert tab["id"] == "browser-context--tab--generic--v1"
+    assert tab["kind"] == "module"
+    assert tab["module"] == "tab"
+
+
+def test_collect_v2_records_skill(temp_v2_prompts_dir):
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    kit = next(r for r in records if r.get("kind") == "skill")
+    assert kit["id"] == "skill--kit--generic--v1"
+    assert kit["name"] == "kit"
+    assert kit["version"] == "1.0"
+    assert kit["description"] == "Mascot info"
+    assert kit["prompts"] == "Kit is a Firefox mascot"
+
+
+def test_collect_v2_records_params(temp_v2_prompts_dir):
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    params = next(r for r in records if r.get("kind") == "params")
+    assert params["id"] == "chat--params--generic--v1"
+    assert params["feature"] == "chat"
+    assert params["model"] == "generic"
+    assert params["temperature"] == 1.0
+    assert params["purpose"] == "chat"
+    assert params["service_type"] == "ai"
+    assert "prompt" not in params
+
+
+def test_collect_v2_records_params_loads_all_keys(temp_v2_prompts_dir):
+    # Drop in a JSON with arbitrary keys; all should be preserved on the record.
+    params_dir = temp_v2_prompts_dir / "prompts_v2" / "features" / "chat" / "params" / "v1"
+    with open(params_dir / "generic.json", "w") as f:
+        json.dump(
+            {
+                "version": "1.0",
+                "temperature": 0.7,
+                "top_p": 0.95,
+                "custom_flag": True,
+                "nested": {"a": 1},
+            },
+            f,
+        )
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    params = next(r for r in records if r.get("kind") == "params")
+    assert params["temperature"] == 0.7
+    assert params["top_p"] == 0.95
+    assert params["custom_flag"] is True
+    assert params["nested"] == {"a": 1}
+
+
+def test_collect_v2_records_params_per_model(temp_v2_prompts_dir):
+    # A params dir can have one JSON per model alongside generic.json.
+    params_dir = temp_v2_prompts_dir / "prompts_v2" / "features" / "chat" / "params" / "v1"
+    with open(params_dir / "qwen3-235b-a22b-instruct-2507-maas.json", "w") as f:
+        json.dump({"version": "1.0", "temperature": 0.5}, f)
+
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    params_records = [r for r in records if r.get("kind") == "params"]
+    by_model = {r["model"]: r for r in params_records}
+    assert "generic" in by_model
+    assert "qwen3-235b-a22b-instruct-2507-maas" in by_model
+    assert by_model["generic"]["id"] == "chat--params--generic--v1"
+    assert (
+        by_model["qwen3-235b-a22b-instruct-2507-maas"]["id"]
+        == "chat--params--qwen3-235b-a22b-instruct-2507-maas--v1"
+    )
+    assert by_model["qwen3-235b-a22b-instruct-2507-maas"]["temperature"] == 0.5
+
+
+def test_collect_v2_records_params_in_other_feature(temp_v2_prompts_dir):
+    # params can appear under any feature, not just chat.
+    bc_params = (
+        temp_v2_prompts_dir / "prompts_v2" / "features" / "browser-context" / "params" / "v1"
+    )
+    bc_params.mkdir(parents=True)
+    with open(bc_params / "generic.json", "w") as f:
+        json.dump({"version": "1.0", "max_tokens": 200}, f)
+
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    bc = next(
+        r for r in records if r.get("kind") == "params" and r.get("feature") == "browser-context"
+    )
+    assert bc["id"] == "browser-context--params--generic--v1"
+    assert bc["max_tokens"] == 200
+
+
+def test_collect_v2_records_params_rejects_reserved_keys(temp_v2_prompts_dir):
+    # Reserved keys (id/kind/feature/model) must not silently clobber the
+    # computed identity fields; the updater should refuse to ingest such a file.
+    params_dir = temp_v2_prompts_dir / "prompts_v2" / "features" / "chat" / "params" / "v1"
+    with open(params_dir / "generic.json", "w") as f:
+        json.dump({"version": "1.0", "feature": "rogue", "temperature": 0.1}, f)
+
+    with pytest.raises(ValueError, match="reserved key"):
+        collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+
+
+def test_collect_v2_records_normalizes_dots_in_model_name(temp_v2_prompts_dir):
+    gemini = temp_v2_prompts_dir / "prompts_v2" / "features" / "chat" / "model-details" / "v1"
+    with open(gemini / "gemini-2.5-flash-lite.json", "w") as f:
+        json.dump({"version": "1.0"}, f)
+    with open(gemini / "gemini-2.5-flash-lite.md", "w") as f:
+        f.write("Gemini cutoff")
+
+    records = collect_v2_records(temp_v2_prompts_dir / "prompts_v2")
+    rec = next(r for r in records if r.get("model") == "gemini-2.5-flash-lite")
+    assert rec["id"] == "chat--model-details--gemini-2-5-flash-lite--v1"
+
+
+def test_collect_v2_records_no_v2_dir():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        empty_repo = Path(temp_dir)
+        records = collect_v2_records(empty_repo / "prompts_v2")
+        assert records == []
+
+
+def test_fetch_current_prompts_includes_v2(temp_v2_prompts_dir, capsys):
+    records = fetch_current_prompts(temp_v2_prompts_dir)
+    legacy = [r for r in records if r.get("id", "").startswith("chat--") and "kind" not in r]
+    v2 = [r for r in records if r.get("kind") in {"module", "skill", "params"}]
+    assert len(legacy) == 1
+    assert len(v2) >= 4
+    output = capsys.readouterr().out
+    assert "v2 prompt records" in output
+
+
 @mock.patch("ai_window_prompts_updater.shutil.rmtree")
 @mock.patch("ai_window_prompts_updater.collect_prompts_and_params")
 def test_fetch_current_prompts(mock_collect, mock_rmtree, temp_prompts_dir, capsys):
@@ -184,8 +406,8 @@ def test_fetch_current_prompts(mock_collect, mock_rmtree, temp_prompts_dir, caps
     mock_collect.assert_called_once()
     mock_rmtree.assert_called_once()
     output = capsys.readouterr().out
-    assert "📦 Found 2 prompt records" in output
-    assert "🧹 Cleaned up temporary directory" in output
+    assert "Found 2 prompt records" in output
+    assert "Cleaned up temporary directory" in output
 
 
 def test_fetch_current_prompts_missing_directory(capsys):
@@ -279,7 +501,7 @@ def test_sync_collection_dev_auto_approve(capsys):
     mock_client.request_review.assert_called_once()
     mock_client.approve_changes.assert_called_once()
     output = capsys.readouterr().out
-    assert "🟢 Self-approving changes on dev" in output
+    assert "Self-approving changes on dev" in output
 
 
 def test_sync_collection_fetch_error(capsys):
